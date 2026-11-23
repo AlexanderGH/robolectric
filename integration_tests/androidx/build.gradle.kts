@@ -1,6 +1,14 @@
 plugins {
   alias(libs.plugins.android.library)
   alias(libs.plugins.robolectric.android.project)
+  id("org.robolectric.cds")
+}
+
+// Opt in with -Probolectric.cds=true: the test JVMs get a CDS archive of SDK 36's classes, or of
+// the SDK in -Probolectric.cds.sdk.
+robolectricCds {
+  enabled = providers.gradleProperty("robolectric.cds").map { it.toBoolean() }.orElse(false)
+  sdk = providers.gradleProperty("robolectric.cds.sdk").map { it.toInt() }.orElse(36)
 }
 
 android {

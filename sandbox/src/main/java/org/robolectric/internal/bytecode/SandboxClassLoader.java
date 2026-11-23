@@ -57,6 +57,8 @@ public class SandboxClassLoader extends URLClassLoader implements ClassTracker {
   // Names that isClassLoaded found loaded. A class stays loaded for the life of its loader, and
   // Shadows.reset asks about the same classes after every test.
   private final Set<String> loadedClassNames = ConcurrentHashMap.newKeySet();
+  // Null unless robolectric.cds.recordDir is set.
+  private final CdsClassListRecorder cdsClassListRecorder = CdsClassListRecorder.create(this);
   private boolean isClosed;
 
   /** Constructor for use by tests. */
@@ -262,12 +264,37 @@ public class SandboxClassLoader extends URLClassLoader implements ClassTracker {
   private Class<?> maybeInstrumentClass(String className) throws ClassNotFoundException {
     byte[] classBytes = getByteCode(className);
     ClassDetails classDetails = new ClassDetails(classBytes);
-    if (config.shouldInstrument(classDetails)) {
+    boolean instrumented = config.shouldInstrument(classDetails);
+    if (instrumented) {
       classBytes = classInstrumentor.instrument(classDetails, config, classNodeProvider);
       maybeDumpClassBytes(classDetails, classBytes);
     }
     ensurePackage(className);
-    return defineClass(className, classBytes, 0, classBytes.length);
+    Class<?> clazz = defineClass(className, classBytes, 0, classBytes.length);
+    if (cdsClassListRecorder != null && !instrumented) {
+      cdsClassListRecorder.record(clazz, getClassBytesUrl(className));
+    }
+    return clazz;
+  }
+
+  /**
+   * Returns the URL that {@link #getClassBytesAsStreamPreferringLocalUrls} reads the class from, or
+   * null if it reads it from somewhere else.
+   */
+  private URL getClassBytesUrl(String className) {
+    String resName = className.replace('.', '/') + ".class";
+    URL fromUrlsClassLoader = resourceProvider.getResource(resName);
+    if (fromUrlsClassLoader != null) {
+      return fromUrlsClassLoader;
+    }
+    try (InputStream fromAlternateClassLoader = getClassBytesFromAlternateClassLoader(resName)) {
+      if (fromAlternateClassLoader != null) {
+        return null;
+      }
+    } catch (IOException e) {
+      return null;
+    }
+    return getResource(resName);
   }
 
   private void maybeDumpClassBytes(ClassDetails classDetails, byte[] classBytes) {

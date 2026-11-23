@@ -1,5 +1,6 @@
 pluginManagement {
   includeBuild("build-logic")
+  includeBuild("cds-gradle-plugin")
   repositories {
     gradlePluginPortal()
     google()
